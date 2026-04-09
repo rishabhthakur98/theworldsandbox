@@ -1,5 +1,8 @@
 mod app;
 mod camera;
+mod control;
+mod core;
+mod light;
 mod render;
 mod world;
 

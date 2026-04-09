@@ -1,34 +1,47 @@
 use std::sync::Arc;
 use std::time::Instant;
-use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
     event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowId},
+    keyboard::PhysicalKey,
+    window::{CursorGrabMode, Window, WindowId, Fullscreen},
 };
 
-use crate::camera::{Camera, CameraUniform, InputState};
+use crate::camera::Camera;
+use crate::control::{InputState, KEY_FORWARD, KEY_BACKWARD, KEY_LEFT, KEY_RIGHT};
+use crate::core::config;
+use crate::light::sun::Sun;
 use crate::render::Vertex;
 use crate::world::generate_world;
+
+// NEW: Combined structure sent to the GPU
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GlobalUniform {
+    pub view_proj: [[f32; 4]; 4],
+    pub sun_dir: [f32; 4], 
+    pub sun_color: [f32; 4],
+    pub ambient_color: [f32; 4],
+}
 
 pub struct State {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    surface_config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     camera: Camera,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    sun: Sun,
+    global_uniform: GlobalUniform,
+    global_buffer: wgpu::Buffer,
+    global_bind_group: wgpu::BindGroup,
     depth_texture_view: wgpu::TextureView,
     input: InputState,
     last_frame_time: Instant,
@@ -49,7 +62,7 @@ impl State {
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let config = wgpu::SurfaceConfiguration {
+        let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_caps.formats[0],
             width: size.width, height: size.height,
@@ -57,36 +70,44 @@ impl State {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![], desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &config);
+        surface.configure(&device, &surface_config);
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d { width: config.width, height: config.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d { width: surface_config.width, height: surface_config.height, depth_or_array_layers: 1 },
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float, usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: Some("Depth Texture"), view_formats: &[],
         });
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let camera = Camera { pos: Vec3::new(0.0, 0.0, 1000.0), yaw: -90.0_f32.to_radians(), pitch: 0.0 };
-        let camera_uniform = CameraUniform { view_proj: Mat4::IDENTITY.to_cols_array_2d() };
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
+        let camera = Camera::new();
+        let sun = Sun::new();
+        
+        let global_uniform = GlobalUniform { 
+            view_proj: camera.get_view_proj(surface_config.width as f32, surface_config.height as f32),
+            sun_dir: [sun.direction.x, sun.direction.y, sun.direction.z, 0.0],
+            sun_color: sun.color,
+            ambient_color: sun.ambient,
+        };
+
+        let global_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Global Buffer"),
+            contents: bytemuck::cast_slice(&[global_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let global_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0, visibility: wgpu::ShaderStages::VERTEX,
+                binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                 count: None,
-            }], label: Some("camera_bind_group_layout"),
+            }], label: Some("global_bind_group_layout"),
         });
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() }],
-            label: Some("camera_bind_group"),
+        let global_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &global_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: global_buffer.as_entire_binding() }],
+            label: Some("global_bind_group"),
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -96,7 +117,7 @@ impl State {
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[Some(&camera_bind_group_layout)],
+            bind_group_layouts: &[Some(&global_bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -106,7 +127,7 @@ impl State {
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), buffers: &[Vertex::desc()], compilation_options: Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: &shader, entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState { format: surface_config.format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {front_face: wgpu::FrontFace::Cw, cull_mode: Some(wgpu::Face::Back), ..Default::default() },
@@ -122,21 +143,21 @@ impl State {
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("IBuf"), contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
 
         Self {
-            window, surface, device, queue, config, render_pipeline, vertex_buffer, index_buffer,
-            num_indices: indices.len() as u32, camera, camera_uniform, camera_buffer, camera_bind_group, depth_texture_view,
-            input: InputState { w: false, a: false, s: false, d: false },
+            window, surface, device, queue, surface_config, render_pipeline, vertex_buffer, index_buffer,
+            num_indices: indices.len() as u32, camera, sun, global_uniform, global_buffer, global_bind_group, depth_texture_view,
+            input: InputState::new(),
             last_frame_time: Instant::now(),
         }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
+            self.surface_config.width = new_size.width;
+            self.surface_config.height = new_size.height;
+            self.surface.configure(&self.device, &self.surface_config);
 
             let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                size: wgpu::Extent3d { width: self.config.width, height: self.config.height, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d { width: self.surface_config.width, height: self.surface_config.height, depth_or_array_layers: 1 },
                 mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Depth32Float, usage: wgpu::TextureUsages::RENDER_ATTACHMENT, label: None, view_formats: &[],
             });
@@ -149,9 +170,13 @@ impl State {
         self.last_frame_time = Instant::now();
 
         self.camera.update_position(dt, &self.input);
-        self.camera.update_uniform(self.config.width as f32, self.config.height as f32, &mut self.camera_uniform);
         
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+        self.global_uniform.view_proj = self.camera.get_view_proj(self.surface_config.width as f32, self.surface_config.height as f32);
+        self.global_uniform.sun_dir = [self.sun.direction.x, self.sun.direction.y, self.sun.direction.z, 0.0];
+        self.global_uniform.sun_color = self.sun.color;
+        self.global_uniform.ambient_color = self.sun.ambient;
+
+        self.queue.write_buffer(&self.global_buffer, 0, bytemuck::cast_slice(&[self.global_uniform]));
     }
 
     pub fn render(&mut self) {
@@ -159,7 +184,7 @@ impl State {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.resize(winit::dpi::PhysicalSize::new(self.config.width, self.config.height));
+                self.resize(winit::dpi::PhysicalSize::new(self.surface_config.width, self.surface_config.height));
                 return;
             }
             _ => return,
@@ -168,12 +193,19 @@ impl State {
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
+        let clear_color = wgpu::Color { 
+            r: config::CLEAR_COLOR[0], 
+            g: config::CLEAR_COLOR[1], 
+            b: config::CLEAR_COLOR[2], 
+            a: config::CLEAR_COLOR[3] 
+        };
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view, resolve_target: None, depth_slice: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None,
@@ -182,7 +214,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
@@ -200,9 +232,15 @@ pub struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none() {
-            let window = Arc::new(event_loop.create_window(Window::default_attributes()
-                .with_title("TheWorldSandbox")
-                .with_inner_size(LogicalSize::new(1366.0, 768.0))).unwrap());
+            let mut window_builder = Window::default_attributes()
+                .with_title(config::WINDOW_TITLE)
+                .with_inner_size(LogicalSize::new(config::WINDOW_WIDTH as f64, config::WINDOW_HEIGHT as f64));
+
+            if config::IS_FULLSCREEN {
+                window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+            }
+
+            let window = Arc::new(event_loop.create_window(window_builder).unwrap());
             let _ = window.set_cursor_grab(CursorGrabMode::Confined);
             window.set_cursor_visible(false);
             self.state = Some(pollster::block_on(State::new(window)));
@@ -212,14 +250,21 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         let state = self.state.as_mut().unwrap();
         match event {
-            WindowEvent::CloseRequested | WindowEvent::KeyboardInput { event: KeyEvent { state: ElementState::Pressed, physical_key: PhysicalKey::Code(KeyCode::Escape), .. }, .. } => event_loop.exit(),
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => state.resize(physical_size),
-            WindowEvent::KeyboardInput { event: KeyEvent { state: key_state, physical_key: PhysicalKey::Code(code), .. }, .. } => {
+            WindowEvent::KeyboardInput { event: KeyEvent { state: key_state, physical_key, .. }, .. } => {
                 let pressed = key_state == ElementState::Pressed;
-                match code {
-                    KeyCode::KeyW => state.input.w = pressed, KeyCode::KeyA => state.input.a = pressed,
-                    KeyCode::KeyS => state.input.s = pressed, KeyCode::KeyD => state.input.d = pressed,
-                    _ => {}
+                if let PhysicalKey::Code(code) = physical_key {
+                    if code == winit::keyboard::KeyCode::Escape {
+                        event_loop.exit();
+                    }
+                    match code {
+                        KEY_FORWARD => state.input.forward = pressed,
+                        KEY_BACKWARD => state.input.backward = pressed,
+                        KEY_LEFT => state.input.left = pressed,
+                        KEY_RIGHT => state.input.right = pressed,
+                        _ => {}
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {
