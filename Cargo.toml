@@ -1,0 +1,21 @@
+[package]
+name = "theworldsandbox"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Graphics and Windowing
+wgpu = "29.0.1"
+winit = "0.30.8"
+
+# Math
+glam = "0.32.1"
+bytemuck = { version = "1.22", features = ["derive"] }
+
+# Async runtime for WGPU initialization
+pollster = "0.3"
+
+# --- Optional Dependencies ---
+# Logging (Optional, but highly recommended to catch wgpu validation errors)
+env_logger = "0.11"
+log = "0.4.29"
