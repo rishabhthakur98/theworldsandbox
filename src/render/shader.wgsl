@@ -24,10 +24,8 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Simple directional lighting so the sphere looks 3D
     let light_dir = normalize(vec3<f32>(1.0, 1.0, 0.5));
     let diffuse = max(dot(in.normal, light_dir), 0.1); 
-    
-    let planet_color = vec3<f32>(1.0, 1.0, 1.0); // White planet
+    let planet_color = vec3<f32>(1.0, 1.0, 1.0);
     return vec4<f32>(planet_color * diffuse, 1.0);
 }
