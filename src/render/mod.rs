@@ -3,6 +3,7 @@
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
+    pub color: [f32; 3], // NEW: Vertex Color
 }
 
 impl Vertex {
@@ -13,6 +14,7 @@ impl Vertex {
             attributes: &[
                 wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
                 wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 24, shader_location: 2, format: wgpu::VertexFormat::Float32x3 }, // NEW: Pass color to shader
             ],
         }
     }

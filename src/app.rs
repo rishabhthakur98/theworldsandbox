@@ -13,7 +13,7 @@ use winit::{
 
 use crate::camera::{Camera, CameraUniform, InputState};
 use crate::render::Vertex;
-use crate::world::generate_planet;
+use crate::world::generate_world;
 
 pub struct State {
     window: Arc<Window>,
@@ -117,7 +117,7 @@ impl State {
             multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None,
         });
 
-        let (vertices, indices) = generate_planet();
+        let (vertices, indices) = generate_world();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("VBuf"), contents: bytemuck::cast_slice(&vertices), usage: wgpu::BufferUsages::VERTEX });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("IBuf"), contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
 
