@@ -17,9 +17,22 @@ pub struct CameraUniform {
 }
 
 impl Camera {
-    pub fn update_position(&mut self, dt: f32, input: &InputState) {
+pub fn update_position(&mut self, dt: f32, input: &InputState) {
         let speed = 100.0 * dt; 
-        let forward = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize();
+        
+        // 1. Calculate the exact 3D vector the camera is looking at
+        let (yaw_sin, yaw_cos) = self.yaw.sin_cos();
+        let (pitch_sin, pitch_cos) = self.pitch.sin_cos();
+        
+        // FIX: Include `pitch` so W and S move you up/down based on where you look
+        let forward = Vec3::new(
+            yaw_cos * pitch_cos, 
+            pitch_sin, 
+            yaw_sin * pitch_cos
+        ).normalize();
+
+        // 2. The Right vector should stay flat so A and D just strafe side-to-side 
+        // without accidentally rolling the camera over.
         let right = forward.cross(Vec3::Y).normalize();
 
         if input.w { self.pos += forward * speed; }
