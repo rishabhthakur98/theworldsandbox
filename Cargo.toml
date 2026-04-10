@@ -19,3 +19,4 @@ pollster = "0.3"
 # Logging (Optional, but highly recommended to catch wgpu validation errors)
 env_logger = "0.11"
 log = "0.4.29"
+gltf = "1.4.1"

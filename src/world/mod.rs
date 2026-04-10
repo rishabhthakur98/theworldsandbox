@@ -4,7 +4,7 @@ pub mod planet;
 use crate::render::Vertex;
 
 pub fn generate_world() -> (Vec<Vertex>, Vec<u16>) {
-    let radius = 390.0;
+    let radius = 300.0;
     
     let (mut vertices, mut indices) = planet::generate_planet(radius);
 
