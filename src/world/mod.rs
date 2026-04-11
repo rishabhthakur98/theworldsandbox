@@ -1,18 +1,10 @@
-pub mod building;
 pub mod planet;
 
 use crate::render::Vertex;
 
-pub fn generate_world() -> (Vec<Vertex>, Vec<u16>) {
-    let radius = 300.0;
+pub fn generate_world() -> (Vec<Vertex>, Vec<u16>, gltf::image::Data) {
+    let base_y = 0.0;
     
-    let (mut vertices, mut indices) = planet::generate_planet(radius);
-
-    let start_idx = vertices.len() as u16;
-    let (b_verts, b_indices) = building::generate_building(radius, start_idx);
-
-    vertices.extend(b_verts);
-    indices.extend(b_indices);
-
-    (vertices, indices)
+    // Pass the base_y down and return the vertices, indices, and the texture image
+    planet::generate_planet(base_y)
 }
