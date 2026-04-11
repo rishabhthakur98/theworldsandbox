@@ -1,29 +1,28 @@
 use crate::render::Vertex;
 
-pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Data) {
+pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Data, gltf::image::Data) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
-    // 1. Load the binary glTF file 
-    let (document, buffers, mut images) = gltf::import("assets/planet.glb").expect("Failed to load planet.glb");
+    let (document, buffers, images) = gltf::import("assets/planet.glb").expect("Failed to load planet.glb");
 
-    // ---------------------------------------------------------
-    // NEW: Find the actual Base Color (Albedo) image index!
-    // ---------------------------------------------------------
-    let mut color_image_index = 0; // Fallback to 0
+    // Find the correct image indices by looking at the Material
+    let mut color_index = 0;
+    let mut normal_index = 0;
+
     for material in document.materials() {
-        // Look for the PBR base color texture
-        if let Some(texture_info) = material.pbr_metallic_roughness().base_color_texture() {
-            color_image_index = texture_info.texture().source().index();
-            break; // We found it, stop looking
+        if let Some(tex) = material.pbr_metallic_roughness().base_color_texture() {
+            color_index = tex.texture().source().index();
+        }
+        if let Some(tex) = material.normal_texture() {
+            normal_index = tex.texture().source().index();
         }
     }
 
-    // Extract the correct image based on the material data
-    let image_data = images.remove(color_image_index);
-    // ---------------------------------------------------------
+    // Clone the images out so we can pass both of them to the GPU
+    let diffuse_image = images[color_index].clone();
+    let normal_image = images[normal_index].clone();
 
-    // 2. Loop through the file to find the 3D meshes
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -38,11 +37,20 @@ pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Dat
                 vec![[0.0, 0.0]; positions.len()] 
             };
 
+            // NEW: Read Tangents (Required for Normal Mapping)
+            let tangents: Vec<[f32; 4]> = if let Some(t) = reader.read_tangents() {
+                t.collect()
+            } else {
+                // Fallback dummy tangent if the file didn't export them
+                vec![[1.0, 0.0, 0.0, 1.0]; positions.len()] 
+            };
+
             for i in 0..positions.len() {
                 vertices.push(Vertex {
                     position: positions[i],
                     normal: normals[i],
                     tex_coords: tex_coords[i], 
+                    tangent: tangents[i], // Add tangent to vertex
                     color: [1.0, 1.0, 1.0], 
                 });
             }
@@ -55,5 +63,5 @@ pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Dat
         }
     }
 
-    (vertices, indices, image_data)
+    (vertices, indices, diffuse_image, normal_image)
 }
