@@ -5,7 +5,10 @@ pub fn load_model(path: &str) -> (Vec<Vertex>, Vec<u32>, gltf::image::Data, gltf
     let mut indices = Vec::new(); // Now implicitly Vec<u32>
 
     // Use the dynamic path variable!
-    let (document, buffers, images) = gltf::import(path).unwrap_or_else(|_| panic!("Failed to load {}", path));
+let (document, buffers, images) = match gltf::import(path) {
+        Ok(data) => data,
+        Err(err) => panic!("Failed to load {}. Real cause: {:?}", path, err),
+    };
 
     let mut color_idx = None;
     let mut normal_idx = None;

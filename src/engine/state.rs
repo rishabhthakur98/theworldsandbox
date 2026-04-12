@@ -21,6 +21,14 @@ pub struct GlobalUniform {
     pub camera_pos: [f32; 4],
 }
 
+// NEW: A struct to hold buffers and textures for EACH model
+pub struct RenderModel {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub num_indices: u32,
+    pub texture_bind_group: wgpu::BindGroup,
+}
+
 pub struct State {
     pub window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -28,15 +36,15 @@ pub struct State {
     queue: wgpu::Queue,
     pub surface_config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
+    
+    // NEW: We now hold a list of models instead of a single giant buffer
+    models: Vec<RenderModel>,
+    
     pub camera: Camera,
     sun: Sun,
     global_uniform: GlobalUniform,
     global_buffer: wgpu::Buffer,
     global_bind_group: wgpu::BindGroup,
-    texture_bind_group: wgpu::BindGroup,
     depth_texture_view: wgpu::TextureView,
     pub input: InputState,
     last_frame_time: Instant,
@@ -88,12 +96,8 @@ impl State {
 
         let global_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &global_bind_group_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: global_buffer.as_entire_binding() }], label: Some("global_bind_group") });
 
-        let (vertices, indices, diffuse_image, normal_image, mr_image, ao_image) = generate_world();
-
-        let diffuse_view = create_texture_from_gltf(&device, &queue, diffuse_image, "diffuse", true);
-        let normal_view = create_texture_from_gltf(&device, &queue, normal_image, "normal", false);
-        let mr_view = create_texture_from_gltf(&device, &queue, mr_image, "metallic_roughness", false);
-        let ao_view = create_texture_from_gltf(&device, &queue, ao_image, "ambient_occlusion", false);
+        // Retrieve the data, which is now a List of isolated meshes and textures
+        let world_data = generate_world();
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat, address_mode_v: wgpu::AddressMode::Repeat, address_mode_w: wgpu::AddressMode::Repeat,
@@ -111,18 +115,6 @@ impl State {
             label: Some("texture_bind_group_layout"),
         });
 
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&normal_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&mr_view) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&ao_view) },
-            ],
-            label: Some("texture_bind_group"),
-        });
-
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("../render/shader.wgsl").into()) });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -138,10 +130,42 @@ impl State {
             multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("VBuf"), contents: bytemuck::cast_slice(&vertices), usage: wgpu::BufferUsages::VERTEX });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("IBuf"), contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
+        // NEW: Loop through each object, generate its specific WGPU textures, and store it
+        let mut models = Vec::new();
+        for data in world_data {
+            let diffuse_view = create_texture_from_gltf(&device, &queue, data.diffuse, "diffuse", true);
+            let normal_view = create_texture_from_gltf(&device, &queue, data.normal, "normal", false);
+            let mr_view = create_texture_from_gltf(&device, &queue, data.mr, "metallic_roughness", false);
+            let ao_view = create_texture_from_gltf(&device, &queue, data.ao, "ambient_occlusion", false);
 
-        Self { window, surface, device, queue, surface_config, render_pipeline, vertex_buffer, index_buffer, num_indices: indices.len() as u32, camera, sun, global_uniform, global_buffer, global_bind_group, texture_bind_group, depth_texture_view, input: InputState::new(), last_frame_time: Instant::now() }
+            let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse_view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&normal_view) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&mr_view) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&ao_view) },
+                ],
+                label: Some("texture_bind_group"),
+            });
+
+            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { 
+                label: Some("VBuf"), contents: bytemuck::cast_slice(&data.vertices), usage: wgpu::BufferUsages::VERTEX 
+            });
+            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { 
+                label: Some("IBuf"), contents: bytemuck::cast_slice(&data.indices), usage: wgpu::BufferUsages::INDEX 
+            });
+
+            models.push(RenderModel {
+                vertex_buffer,
+                index_buffer,
+                num_indices: data.indices.len() as u32,
+                texture_bind_group,
+            });
+        }
+
+        Self { window, surface, device, queue, surface_config, render_pipeline, models, camera, sun, global_uniform, global_buffer, global_bind_group, depth_texture_view, input: InputState::new(), last_frame_time: Instant::now() }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -187,13 +211,14 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             
-            // FIXED: Set index format to Uint32 to allow indices over 65535 limit
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            // NEW: Loop through each of our models, switch to its texture, and draw it!
+            for model in &self.models {
+                render_pass.set_bind_group(1, &model.texture_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..model.num_indices, 0, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
