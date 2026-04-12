@@ -1,4 +1,4 @@
-pub mod config;
+use crate::config;
 
 use glam::{Mat4, Vec3};
 use crate::control::InputState;

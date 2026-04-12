@@ -1,17 +1,17 @@
 use crate::render::Vertex;
 
-pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Data, gltf::image::Data, gltf::image::Data, gltf::image::Data) {
+pub fn load_model(path: &str) -> (Vec<Vertex>, Vec<u32>, gltf::image::Data, gltf::image::Data, gltf::image::Data, gltf::image::Data) {
     let mut vertices = Vec::new();
-    let mut indices = Vec::new();
+    let mut indices = Vec::new(); // Now implicitly Vec<u32>
 
-    let (document, buffers, images) = gltf::import("assets/planet.glb").expect("Failed to load planet.glb");
+    // Use the dynamic path variable!
+    let (document, buffers, images) = gltf::import(path).unwrap_or_else(|_| panic!("Failed to load {}", path));
 
     let mut color_idx = None;
     let mut normal_idx = None;
-    let mut mr_idx = None; // Metallic-Roughness map
-    let mut ao_idx = None; // Ambient Occlusion map
+    let mut mr_idx = None; 
+    let mut ao_idx = None; 
 
-    // 1. Hunt down the indices for all 4 PBR textures
     for material in document.materials() {
         if let Some(tex) = material.pbr_metallic_roughness().base_color_texture() { color_idx = Some(tex.texture().source().index()); }
         if let Some(tex) = material.normal_texture() { normal_idx = Some(tex.texture().source().index()); }
@@ -19,7 +19,6 @@ pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Dat
         if let Some(tex) = material.occlusion_texture() { ao_idx = Some(tex.texture().source().index()); }
     }
 
-    // 2. Helper to safely grab the image, or generate a dummy if it doesn't exist
     let get_image = |index: Option<usize>, fallback: [u8; 4]| -> gltf::image::Data {
         if let Some(i) = index {
             if i < images.len() { return images[i].clone(); }
@@ -27,11 +26,10 @@ pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Dat
         gltf::image::Data { pixels: fallback.to_vec(), format: gltf::image::Format::R8G8B8A8, width: 1, height: 1 }
     };
 
-    // Extract all 4 maps with safe fallbacks
     let diffuse_image = get_image(color_idx, [255, 255, 255, 255]);
-    let normal_image = get_image(normal_idx, [128, 128, 255, 255]); // Flat normal fallback
-    let mr_image = get_image(mr_idx, [0, 128, 0, 255]); // Green channel = Roughness = 0.5
-    let ao_image = get_image(ao_idx, [255, 255, 255, 255]); // Red channel = AO = 1.0 (No shadow)
+    let normal_image = get_image(normal_idx, [128, 128, 255, 255]); 
+    let mr_image = get_image(mr_idx, [0, 128, 0, 255]); 
+    let ao_image = get_image(ao_idx, [255, 255, 255, 255]); 
 
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
@@ -52,7 +50,8 @@ pub fn generate_planet(_base_y: f32) -> (Vec<Vertex>, Vec<u16>, gltf::image::Dat
             }
 
             if let Some(indices_iter) = reader.read_indices() {
-                for index in indices_iter.into_u32() { indices.push((index + vertex_offset) as u16); }
+                // FIXED: Changed to keep it as u32 instead of u16
+                for index in indices_iter.into_u32() { indices.push(index + vertex_offset); }
             }
         }
     }

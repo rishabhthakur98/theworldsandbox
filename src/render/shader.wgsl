@@ -76,16 +76,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // AMBIENT OCCLUSION: Multiply ambient light by the AO map value
     let ambient = global.ambient_color.xyz * global.ambient_color.a * ao;
     
-    // SPECULAR REFLECTION (Shininess): Driven by the Roughness map
-    let min_roughness = max(roughness, 0.05); // Prevent divide by zero
+    // SPECULAR REFLECTION (Shininess)
+    let min_roughness = max(roughness, 0.05); 
     let shininess = 2.0 / (pow(min_roughness, 4.0)) - 2.0;
     let spec_angle = max(dot(final_normal, half_dir), 0.0);
     let specular_strength = pow(spec_angle, max(shininess, 1.0));
     
-    // Rougher surfaces have weaker, spread-out highlights. Smooth surfaces have tight, bright ones.
-    let specular_color = global.sun_color.xyz * global.sun_color.a * specular_strength * (1.0 - roughness);
+    // THE FIX: Dielectrics (dirt/rock) only reflect ~4% of light directly. 
+    // Without this multiplier, the white sun paints completely over the green grass!
+    let base_reflectivity = 0.04; 
+    let specular_color = global.sun_color.xyz * global.sun_color.a * specular_strength * (1.0 - roughness) * base_reflectivity;
 
-    // 5. Combine (Note: Specular light sits ON TOP of diffuse color, it is not multiplied by it!)
+    // 5. Combine
     let diffuse_ambient = ambient + diffuse_color;
     let final_color = (in.color * tex_color.xyz * diffuse_ambient) + specular_color;
     

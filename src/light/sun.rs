@@ -1,5 +1,5 @@
 use glam::Vec3;
-use super::config;
+use crate::config;
 
 pub struct Sun {
     pub direction: Vec3,
