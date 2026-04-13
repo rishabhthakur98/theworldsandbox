@@ -5,6 +5,7 @@ mod control;
 mod engine;
 mod light;
 mod render;
+mod skybox;
 mod world;
 
 use app::App;

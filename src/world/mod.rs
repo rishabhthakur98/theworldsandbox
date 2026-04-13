@@ -3,6 +3,7 @@ pub mod planet;
 use crate::render::Vertex;
 use crate::engine::entity::Entity;
 use crate::light::Light;
+use crate::skybox::CelestialBody;
 use glam::Vec3;
 
 pub struct ModelData {
@@ -15,17 +16,15 @@ pub struct ModelData {
     pub disp: gltf::image::Data, 
 }
 
-pub fn generate_world() -> (Vec<ModelData>, Vec<Light>) {
+// We now return the Skybox Bodies as well!
+pub fn generate_world() -> (Vec<ModelData>, Vec<Light>, Vec<CelestialBody>) {
     
-    // 1. YOUR LEVEL GEOMETRY
     let level = vec![
         Entity::new("assets/tunnel.glb", [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
     ];
 
-    // 2. YOUR DYNAMIC LIGHTS
-    let lights = vec![
-        // Sun shining diagonally
-        // Light::new_sun(20.0, 90.0, [1.0, 0.95, 0.9], 3.0, true), 
+    let lights = vec![        // Sun shining diagonally
+        Light::new_sun(20.0, 90.0, [1.0, 0.95, 0.9], 3.0, true), 
         // Light::new_sun(100.0, 90.0, [100.0, 0.95, 0.9], 3.0, true), 
         
         // A Warm torch deep inside the tunnel
@@ -44,6 +43,16 @@ pub fn generate_world() -> (Vec<ModelData>, Vec<Light>) {
         ),
     ];
 
+    // --- YOUR CUSTOM SKYBOX ---
+    let sky = vec![
+        // A large, soft sun
+        CelestialBody::new_disc(20.0, 70.0, [1.0, 0.9, 0.8], 5.0, 5.0, 0.2),
+        // A crescent moon on the opposite side of the sky
+        CelestialBody::new_crescent(200.0, 30.0, [0.8, 0.8, 1.0], 2.0, 3.0, 0.1, 0.5),
+        // A bright glowing star
+        CelestialBody::new_point(150.0, 60.0, [1.0, 1.0, 1.0], 10.0, 1.0, 5.0),
+    ];
+
     let mut models = Vec::new();
 
     for entity in level {
@@ -59,9 +68,8 @@ pub fn generate_world() -> (Vec<ModelData>, Vec<Light>) {
             let t_dir = normal_matrix.transform_vector3(Vec3::new(v.tangent[0], v.tangent[1], v.tangent[2])).normalize();
             v.tangent = [t_dir.x, t_dir.y, t_dir.z, v.tangent[3]];
         }
-
         models.push(ModelData { vertices: verts, indices: inds, diffuse: diff, normal: norm, mr: mr, ao: ao, disp: disp });
     }
 
-    (models, lights)
+    (models, lights, sky)
 }

@@ -22,3 +22,15 @@ pub const SHADOW_RESOLUTION: u32 = 2048; // Higher = Crisper shadows, but more V
 
 pub const AMBIENT_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
 pub const AMBIENT_INTENSITY: f32 = 0.1;
+
+
+
+// --- SKYBOX SETTINGS ---
+pub const USE_SKYBOX: u32 = 1; // 1 = ON, 0 = OFF
+pub const USE_PANORAMA: u32 = 0; // 1 = ON (Use texture), 0 = OFF (Use gradient)
+
+// Atmospheric Color Shift (Gradient)
+pub const SKY_HORIZON_COLOR: [f32; 4] = [0.8, 0.85, 0.9, 1.0]; // Bright hazy blue
+pub const SKY_ZENITH_COLOR: [f32; 4] = [0.1, 0.3, 0.8, 1.0];   // Deep space blue
+
+pub const MAX_CELESTIAL_BODIES: usize = 8;
