@@ -13,10 +13,12 @@ pub const CAMERA_SPEED: f32 = 20.0;
 pub const MOUSE_SENSITIVITY: f32 = 0.002;
 pub const PITCH_LIMIT: f32 = 89.0;
 
-// Lighting Settings
-pub const SUN_AZIMUTH: f32 = 45.0;
-pub const SUN_ELEVATION: f32 = 45.0;
-pub const SUN_COLOR: [f32; 3] = [1.0, 0.95, 0.9]; 
-pub const SUN_INTENSITY: f32 = 1.0;
+// Rendering Settings
+pub const MAX_LIGHTS: usize = 16; 
+pub const DISPLACEMENT_SCALE: f32 = 0.05; 
+pub const USE_POM: u32 = 0; // 1 = ON, 0 = OFF
+pub const SHADOW_RESOLUTION: u32 = 2048; // Higher = Crisper shadows, but more VRAM
+
+
 pub const AMBIENT_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
 pub const AMBIENT_INTENSITY: f32 = 0.1;

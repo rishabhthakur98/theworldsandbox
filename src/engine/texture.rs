@@ -1,4 +1,4 @@
-use wgpu::util::DeviceExt;
+// FIXED: Removed the unused `use wgpu::util::DeviceExt;` warning!
 
 pub fn create_texture_from_gltf(
     device: &wgpu::Device,
