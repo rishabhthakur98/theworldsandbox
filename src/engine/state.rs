@@ -55,8 +55,9 @@ pub struct State {
     skybox_pipeline: wgpu::RenderPipeline,
     
     shadow_texture: wgpu::Texture,
-    shadow_uniform_buffer: wgpu::Buffer,
-    shadow_bind_group: wgpu::BindGroup,
+    // FIX: An array of buffers prevents the queue from overwriting matrices!
+    shadow_uniform_buffers: Vec<wgpu::Buffer>,
+    shadow_bind_groups: Vec<wgpu::BindGroup>,
 
     skybox_uniform_buffer: wgpu::Buffer,
     skybox_bind_group: wgpu::BindGroup,
@@ -102,9 +103,17 @@ impl State {
         let shadow_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor { address_mode_u: wgpu::AddressMode::ClampToEdge, address_mode_v: wgpu::AddressMode::ClampToEdge, address_mode_w: wgpu::AddressMode::ClampToEdge, mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::MipmapFilterMode::Nearest, compare: Some(wgpu::CompareFunction::LessEqual), ..Default::default() });
 
-        let shadow_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor { label: Some("Shadow Uniform Buffer"), size: 64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let shadow_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None }], label: None });
-        let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &shadow_bind_group_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: shadow_uniform_buffer.as_entire_binding() }], label: None });
+
+        // FIX: Create 16 isolated buffers so WebGPU doesn't overwrite them!
+        let mut shadow_uniform_buffers = Vec::new();
+        let mut shadow_bind_groups = Vec::new();
+        for _ in 0..config::MAX_LIGHTS {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("Shadow Uniform"), size: 64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &shadow_bind_group_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: buf.as_entire_binding() }], label: None });
+            shadow_uniform_buffers.push(buf);
+            shadow_bind_groups.push(bg);
+        }
 
         let camera = Camera::new();
         let (world_data, lights, sky) = generate_world();
@@ -136,12 +145,7 @@ impl State {
         let mut sky_array = [CelestialBody { direction: [0.0;4], color: [0.0;4], params: [0.0;4] }; config::MAX_CELESTIAL_BODIES];
         for (i, b) in sky.iter().enumerate() { if i < config::MAX_CELESTIAL_BODIES { sky_array[i] = *b; } }
 
-        let sky_uniform = SkyboxUniform {
-            view_proj_inv: [[0.0; 4]; 4],
-            horizon_color: config::SKY_HORIZON_COLOR, zenith_color: config::SKY_ZENITH_COLOR,
-            settings: [config::USE_PANORAMA, sky.len() as u32, 0, 0], bodies: sky_array,
-        };
-        
+        let sky_uniform = SkyboxUniform { view_proj_inv: [[0.0; 4]; 4], horizon_color: config::SKY_HORIZON_COLOR, zenith_color: config::SKY_ZENITH_COLOR, settings: [config::USE_PANORAMA, sky.len() as u32, 0, 0], bodies: sky_array };
         let skybox_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("Skybox"), contents: bytemuck::cast_slice(&[sky_uniform]), usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST });
 
         let pano_texture = device.create_texture(&wgpu::TextureDescriptor { size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, label: None, view_formats: &[] });
@@ -166,6 +170,8 @@ impl State {
             label: Some("Shadow Pipeline"), layout: Some(&shadow_pipeline_layout), 
             vertex: wgpu::VertexState { module: &shadow_shader, entry_point: Some("vs_main"), buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: None, 
             primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: None, ..Default::default() }, 
+            
+            // FIX: Removed DepthBiasState! It causes fatal shadow detaching on large scenes. 
             depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState::default() }), 
             multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None 
         });
@@ -215,7 +221,7 @@ impl State {
             models.push(RenderModel { vertex_buffer, index_buffer, num_indices: data.indices.len() as u32, texture_bind_group });
         }
 
-        Self { window, surface, device, queue, surface_config, render_pipeline, shadow_pipeline, skybox_pipeline, shadow_texture, shadow_uniform_buffer, shadow_bind_group, skybox_uniform_buffer, skybox_bind_group, models, lights_data: lights, sky_data: sky, camera, global_uniform, global_buffer, global_bind_group, depth_texture_view, input: InputState::new(), last_frame_time: Instant::now() }
+        Self { window, surface, device, queue, surface_config, render_pipeline, shadow_pipeline, skybox_pipeline, shadow_texture, shadow_uniform_buffers, shadow_bind_groups, skybox_uniform_buffer, skybox_bind_group, models, lights_data: lights, sky_data: sky, camera, global_uniform, global_buffer, global_bind_group, depth_texture_view, input: InputState::new(), last_frame_time: Instant::now() }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -271,12 +277,15 @@ impl State {
         // --- PASS 1: SHADOW MAPPING ---
         for (i, light) in self.lights_data.iter().enumerate() {
             if light.params[0] > 0.0 && i < config::MAX_LIGHTS {
-                self.queue.write_buffer(&self.shadow_uniform_buffer, 0, bytemuck::cast_slice(&[light.light_view_proj]));
+                
+                // Writing to isolated buffers stops queue corruption!
+                self.queue.write_buffer(&self.shadow_uniform_buffers[i], 0, bytemuck::cast_slice(&[light.light_view_proj]));
+
                 let layer_view = self.shadow_texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: i as u32, array_layer_count: Some(1), ..Default::default() });
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { label: Some("Shadow Pass"), color_attachments: &[], depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &layer_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }), timestamp_writes: None, occlusion_query_set: None, multiview_mask: None });
 
                 shadow_pass.set_pipeline(&self.shadow_pipeline);
-                shadow_pass.set_bind_group(0, &self.shadow_bind_group, &[]);
+                shadow_pass.set_bind_group(0, &self.shadow_bind_groups[i], &[]);
                 
                 for model in &self.models {
                     shadow_pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));

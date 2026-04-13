@@ -132,9 +132,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             shadow_coords.x = shadow_coords.x * 0.5 + 0.5;
             shadow_coords.y = shadow_coords.y * -0.5 + 0.5;
             
-            // Dynamic Bias prevents self-shadowing acne
+            // Tightened bias to safely account for the massive 500m Sun camera box!
             let current_depth = shadow_coords.z;
-            let bias = max(0.005 * (1.0 - dot(final_normal, l_dir)), 0.0005); 
+            let bias = max(0.001 * (1.0 - dot(final_normal, l_dir)), 0.0001); 
 
             if (shadow_coords.x >= 0.0 && shadow_coords.x <= 1.0 && 
                 shadow_coords.y >= 0.0 && shadow_coords.y <= 1.0 && 
@@ -143,7 +143,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 let shadow_factor = textureSampleCompare(t_shadow, s_shadow, shadow_coords.xy, i32(i), current_depth - bias);
                 attenuation *= shadow_factor;
             } else if (light.position.w == 2.0) {
-                // If it's a spotlight and you are outside the shadow map, you are completely dark!
+                // Completely erase light that escapes outside the Spotlight camera bounds
                 attenuation = 0.0;
             }
         }
