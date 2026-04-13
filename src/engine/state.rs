@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::time::Instant;
-use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::camera::Camera;
@@ -10,6 +9,7 @@ use crate::engine::texture::create_texture_from_gltf;
 use crate::light::Light;
 use crate::render::Vertex;
 use crate::world::generate_world;
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -140,15 +140,17 @@ impl State {
         ], label: None });
 
         let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Shadow Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("../render/shadow.wgsl").into()) });
-        
-        // FIXED: Using Some() for the layout array
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Shadow Layout"), bind_group_layouts: &[Some(&shadow_bind_group_layout)], immediate_size: 0 });
         
         let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Shadow Pipeline"), layout: Some(&shadow_pipeline_layout),
             vertex: wgpu::VertexState { module: &shadow_shader, entry_point: Some("vs_main"), buffers: &[Vertex::desc()], compilation_options: Default::default() },
             fragment: None, 
-            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: Some(wgpu::Face::Back), ..Default::default() },
+            primitive: wgpu::PrimitiveState { 
+                front_face: wgpu::FrontFace::Ccw, 
+                cull_mode: None, // FIX 2: Turned OFF culling so the roof plane casts a shadow!
+                ..Default::default() 
+            },
             depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 } }),
             multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None,
         });
@@ -166,8 +168,6 @@ impl State {
         });
 
         let main_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("../render/shader.wgsl").into()) });
-        
-        // FIXED: Using Some() for the layouts array
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Main Layout"), bind_group_layouts: &[Some(&global_bind_group_layout), Some(&texture_bind_group_layout)], immediate_size: 0 });
         
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -278,12 +278,8 @@ impl State {
 
         // --- PASS 2: MAIN RENDER ---
         {
-            // FIXED: Using config::CLEAR_COLOR to silence the dead_code warning
             let clear_color = wgpu::Color { 
-                r: config::CLEAR_COLOR[0], 
-                g: config::CLEAR_COLOR[1], 
-                b: config::CLEAR_COLOR[2], 
-                a: config::CLEAR_COLOR[3] 
+                r: config::CLEAR_COLOR[0], g: config::CLEAR_COLOR[1], b: config::CLEAR_COLOR[2], a: config::CLEAR_COLOR[3] 
             };
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

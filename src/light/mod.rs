@@ -10,17 +10,21 @@ pub struct Light {
     pub light_view_proj: [[f32; 4]; 4], 
 }
 
-// FIXED: Silences the "associated functions are never used" warnings!
 #[allow(dead_code)]
 impl Light {
     pub fn new_sun(azimuth_deg: f32, elevation_deg: f32, color: [f32; 3], intensity: f32, cast_shadows: bool) -> Self {
         let az = azimuth_deg.to_radians();
         let el = elevation_deg.to_radians();
-        let dir = Vec3::new(el.cos() * az.sin(), -el.sin(), el.cos() * az.cos());
+        let dir = Vec3::new(el.cos() * az.sin(), -el.sin(), el.cos() * az.cos()).normalize();
 
         let sun_virtual_pos = -dir * 100.0;
-        let view = Mat4::look_at_rh(sun_virtual_pos, Vec3::ZERO, Vec3::Y);
-        let proj = Mat4::orthographic_rh(-50.0, 50.0, -50.0, 50.0, 0.1, 200.0);
+        
+        // FIX 1: Prevent Matrix NaN crash when light points perfectly straight down!
+        let up = if dir.x.abs() < 0.001 && dir.z.abs() < 0.001 { Vec3::Z } else { Vec3::Y };
+        let view = Mat4::look_at_rh(sun_virtual_pos, Vec3::ZERO, up);
+        
+        // Made the orthographic bounds wider to ensure the whole tunnel is covered
+        let proj = Mat4::orthographic_rh(-30.0, 30.0, -30.0, 30.0, 0.1, 200.0);
 
         Self {
             position: [0.0, 0.0, 0.0, 0.0], 
@@ -34,7 +38,9 @@ impl Light {
     pub fn new_spot(pos: [f32; 3], dir: [f32; 3], inner: f32, outer: f32, color: [f32; 3], intensity: f32, radius: f32, cast_shadows: bool) -> Self {
         let direction = Vec3::from(dir).normalize();
         
-        let view = Mat4::look_at_rh(Vec3::from(pos), Vec3::from(pos) + direction, Vec3::Y);
+        // FIX 1: Prevent Matrix NaN crash for Spotlights pointing straight down
+        let up = if direction.x.abs() < 0.001 && direction.z.abs() < 0.001 { Vec3::Z } else { Vec3::Y };
+        let view = Mat4::look_at_rh(Vec3::from(pos), Vec3::from(pos) + direction, up);
         let proj = Mat4::perspective_rh(outer.to_radians() * 2.0, 1.0, 0.1, radius);
 
         Self {
@@ -47,6 +53,7 @@ impl Light {
     }
 
     pub fn new_point(pos: [f32; 3], color: [f32; 3], intensity: f32, radius: f32, cast_shadows: bool) -> Self {
+        // Point lights use Z as up-vector by default since they point at NEG_Y
         let view = Mat4::look_at_rh(Vec3::from(pos), Vec3::from(pos) + Vec3::NEG_Y, Vec3::Z);
         let proj = Mat4::perspective_rh(120.0_f32.to_radians(), 1.0, 0.1, radius);
 

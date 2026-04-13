@@ -25,23 +25,23 @@ pub fn generate_world() -> (Vec<ModelData>, Vec<Light>) {
     // 2. YOUR DYNAMIC LIGHTS
     let lights = vec![
         // Sun shining diagonally
-        Light::new_sun(20.0, 90.0, [1.0, 0.95, 0.9], 3.0, true), 
+        // Light::new_sun(20.0, 90.0, [1.0, 0.95, 0.9], 3.0, true), 
         // Light::new_sun(100.0, 90.0, [100.0, 0.95, 0.9], 3.0, true), 
         
         // A Warm torch deep inside the tunnel
-        // Light::new_point([0.0, 2.0, 10.0], [1.0, 0.5, 0.2], 15.0, 20.0, false),
+        // Light::new_point([0.0, 2.0, 10.0], [1.0, 0.5, 0.2], 15.0, 20.0, true),
         
         // A Street Lamp pointing straight down at the entrance
-        // Light::new_spot(
-        //     [0.0, 10.0, -5.0],  // Positioned high up
-        //     [0.0, -1.0, 0.0],   // Pointing straight down
-        //     12.5,               // Inner Cone Angle
-        //     17.5,               // Outer Cone Angle (smooth fade)
-        //     [1.0, 0.9, 0.6],    // Color
-        //     20.0,               // Intensity
-        //     25.0,               // Max Radius
-        //     true               // Cast shadows
-        // ),
+        Light::new_spot(
+            [0.0, 10.0, -5.0],  // Positioned high up
+            [0.0, -1.0, 0.0],   // Pointing straight down
+            12.5,               // Inner Cone Angle
+            17.5,               // Outer Cone Angle (smooth fade)
+            [1.0, 0.9, 0.6],    // Color
+            20.0,               // Intensity
+            25.0,               // Max Radius
+            true               // Cast shadows
+        ),
     ];
 
     let mut models = Vec::new();

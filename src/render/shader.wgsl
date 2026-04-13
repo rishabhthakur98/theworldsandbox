@@ -3,7 +3,7 @@ struct Light {
     direction: vec4<f32>, 
     color: vec4<f32>,     
     params: vec4<f32>,    
-    light_view_proj: mat4x4<f32>, // NEW
+    light_view_proj: mat4x4<f32>, 
 };
 
 struct GlobalUniform {
@@ -17,8 +17,8 @@ struct GlobalUniform {
     lights: array<Light, 16>, 
 };
 @group(0) @binding(0) var<uniform> global: GlobalUniform;
-@group(0) @binding(1) var t_shadow: texture_depth_2d_array; // NEW
-@group(0) @binding(2) var s_shadow: sampler_comparison;     // NEW
+@group(0) @binding(1) var t_shadow: texture_depth_2d_array; 
+@group(0) @binding(2) var s_shadow: sampler_comparison;     
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_sampler: sampler; 
@@ -124,24 +124,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             attenuation = clamp(1.0 - (distance / light.params.y), 0.0, 1.0) * spot_intensity;
         }
 
-        // --- THE SHADOW MAP CHECK ---
+        // --- SHADOW CALCULATION ---
         if (light.params.x > 0.0) {
             let shadow_pos = light.light_view_proj * vec4<f32>(in.world_position, 1.0);
-            var shadow_coords = shadow_pos.xyz / shadow_pos.w; // Perspective divide
+            var shadow_coords = shadow_pos.xyz / shadow_pos.w; 
             
-            // Convert to UV mapping coordinates (Y is flipped in WGSL)
             shadow_coords.x = shadow_coords.x * 0.5 + 0.5;
             shadow_coords.y = shadow_coords.y * -0.5 + 0.5;
             
-            // Bias prevents "shadow acne" artifacts
-            let bias = 0.005; 
+            // Adjust bias based on angle to prevent acne without causing Peter Panning
+            let current_depth = shadow_coords.z;
+            let bias = max(0.005 * (1.0 - dot(final_normal, l_dir)), 0.001); 
 
-            // Only cast shadows if the pixel is within the light's camera view!
             if (shadow_coords.x >= 0.0 && shadow_coords.x <= 1.0 && 
                 shadow_coords.y >= 0.0 && shadow_coords.y <= 1.0 && 
-                shadow_coords.z >= 0.0 && shadow_coords.z <= 1.0) {
+                current_depth >= 0.0 && current_depth <= 1.0) {
                 
-                let shadow_factor = textureSampleCompare(t_shadow, s_shadow, shadow_coords.xy, i, shadow_coords.z - bias);
+                // FIX 3: Cast index to i32 for WGSL compliance
+                let shadow_factor = textureSampleCompare(t_shadow, s_shadow, shadow_coords.xy, i32(i), current_depth - bias);
                 attenuation *= shadow_factor;
             }
         }
