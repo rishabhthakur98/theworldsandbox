@@ -132,17 +132,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             shadow_coords.x = shadow_coords.x * 0.5 + 0.5;
             shadow_coords.y = shadow_coords.y * -0.5 + 0.5;
             
-            // Adjust bias based on angle to prevent acne without causing Peter Panning
+            // Dynamic Bias prevents self-shadowing acne
             let current_depth = shadow_coords.z;
-            let bias = max(0.005 * (1.0 - dot(final_normal, l_dir)), 0.001); 
+            let bias = max(0.005 * (1.0 - dot(final_normal, l_dir)), 0.0005); 
 
             if (shadow_coords.x >= 0.0 && shadow_coords.x <= 1.0 && 
                 shadow_coords.y >= 0.0 && shadow_coords.y <= 1.0 && 
                 current_depth >= 0.0 && current_depth <= 1.0) {
                 
-                // FIX 3: Cast index to i32 for WGSL compliance
                 let shadow_factor = textureSampleCompare(t_shadow, s_shadow, shadow_coords.xy, i32(i), current_depth - bias);
                 attenuation *= shadow_factor;
+            } else if (light.position.w == 2.0) {
+                // If it's a spotlight and you are outside the shadow map, you are completely dark!
+                attenuation = 0.0;
             }
         }
 

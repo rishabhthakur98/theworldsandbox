@@ -1,5 +1,4 @@
 use crate::config;
-
 use glam::{Mat4, Vec3};
 use crate::control::InputState;
 
@@ -24,12 +23,7 @@ impl Camera {
         let (yaw_sin, yaw_cos) = self.yaw.sin_cos();
         let (pitch_sin, pitch_cos) = self.pitch.sin_cos();
         
-        let forward = Vec3::new(
-            yaw_cos * pitch_cos, 
-            pitch_sin, 
-            yaw_sin * pitch_cos
-        ).normalize();
-
+        let forward = Vec3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize();
         let right = forward.cross(Vec3::Y).normalize();
 
         if input.forward { self.pos += forward * speed; }
@@ -45,7 +39,6 @@ impl Camera {
         self.pitch = self.pitch.clamp(-limit, limit);
     }
 
-    // NEW: Returns the view projection matrix instead of mutating a struct
     pub fn get_view_proj(&self, width: f32, height: f32) -> [[f32; 4]; 4] {
         let (yaw_sin, yaw_cos) = self.yaw.sin_cos();
         let (pitch_sin, pitch_cos) = self.pitch.sin_cos();
@@ -54,6 +47,7 @@ impl Camera {
         let view = Mat4::look_to_rh(self.pos, view_forward, Vec3::Y);
         let proj = Mat4::perspective_rh(f32::to_radians(45.0), width / height, 0.1, 10000.0);
         
-        (proj * view).to_cols_array_2d()
+        // Applied the WebGPU fix to the main camera!
+        (crate::light::OPENGL_TO_WGPU_MATRIX * proj * view).to_cols_array_2d()
     }
 }

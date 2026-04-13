@@ -16,18 +16,14 @@ pub const PITCH_LIMIT: f32 = 89.0;
 // Rendering Settings
 pub const MAX_LIGHTS: usize = 16; 
 pub const DISPLACEMENT_SCALE: f32 = 0.05; 
-pub const USE_POM: u32 = 0; // 1 = ON, 0 = OFF
-pub const SHADOW_RESOLUTION: u32 = 2048; // Higher = Crisper shadows, but more VRAM
-
-
+pub const USE_POM: u32 = 1; 
+pub const SHADOW_RESOLUTION: u32 = 2048; 
 pub const AMBIENT_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
 pub const AMBIENT_INTENSITY: f32 = 0.1;
 
-
-
 // --- SKYBOX SETTINGS ---
 pub const USE_SKYBOX: u32 = 1; // 1 = ON, 0 = OFF
-pub const USE_PANORAMA: u32 = 0; // 1 = ON (Use texture), 0 = OFF (Use gradient)
+pub const USE_PANORAMA: u32 = 1; // 1 = ON (Use texture), 0 = OFF (Use gradient)
 
 // Atmospheric Color Shift (Gradient)
 pub const SKY_HORIZON_COLOR: [f32; 4] = [0.8, 0.85, 0.9, 1.0]; // Bright hazy blue

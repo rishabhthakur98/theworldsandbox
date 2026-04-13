@@ -32,7 +32,7 @@ pub struct SkyboxUniform {
     pub view_proj_inv: [[f32; 4]; 4],
     pub horizon_color: [f32; 4],
     pub zenith_color: [f32; 4],
-    pub settings: [u32; 4], // x=use_pano, y=num_bodies
+    pub settings: [u32; 4], 
     pub bodies: [CelestialBody; config::MAX_CELESTIAL_BODIES],
 }
 
@@ -133,19 +133,17 @@ impl State {
             wgpu::BindGroupEntry { binding: 0, resource: global_buffer.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&shadow_view) }, wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&shadow_sampler) },
         ], label: None });
 
-        // --- SKYBOX SETUP ---
         let mut sky_array = [CelestialBody { direction: [0.0;4], color: [0.0;4], params: [0.0;4] }; config::MAX_CELESTIAL_BODIES];
         for (i, b) in sky.iter().enumerate() { if i < config::MAX_CELESTIAL_BODIES { sky_array[i] = *b; } }
 
         let sky_uniform = SkyboxUniform {
-            view_proj_inv: [[0.0; 4]; 4], // Updated in the loop
+            view_proj_inv: [[0.0; 4]; 4],
             horizon_color: config::SKY_HORIZON_COLOR, zenith_color: config::SKY_ZENITH_COLOR,
             settings: [config::USE_PANORAMA, sky.len() as u32, 0, 0], bodies: sky_array,
         };
         
         let skybox_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("Skybox"), contents: bytemuck::cast_slice(&[sky_uniform]), usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST });
 
-        // A blank 1x1 panorama fallback if image not used
         let pano_texture = device.create_texture(&wgpu::TextureDescriptor { size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, label: None, view_formats: &[] });
         let pano_view = pano_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let pano_sampler = device.create_sampler(&wgpu::SamplerDescriptor { address_mode_u: wgpu::AddressMode::Repeat, address_mode_v: wgpu::AddressMode::ClampToEdge, address_mode_w: wgpu::AddressMode::ClampToEdge, mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::MipmapFilterMode::Nearest, ..Default::default() });
@@ -162,10 +160,15 @@ impl State {
             wgpu::BindGroupEntry { binding: 0, resource: skybox_uniform_buffer.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&pano_view) }, wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&pano_sampler) },
         ], label: None });
 
-        // --- PIPELINES ---
         let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Shadow Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("../render/shadow.wgsl").into()) });
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Shadow Layout"), bind_group_layouts: &[Some(&shadow_bind_group_layout)], immediate_size: 0 });
-        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Shadow Pipeline"), layout: Some(&shadow_pipeline_layout), vertex: wgpu::VertexState { module: &shadow_shader, entry_point: Some("vs_main"), buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: None, primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: None, ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 } }), multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None });
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { 
+            label: Some("Shadow Pipeline"), layout: Some(&shadow_pipeline_layout), 
+            vertex: wgpu::VertexState { module: &shadow_shader, entry_point: Some("vs_main"), buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: None, 
+            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: None, ..Default::default() }, 
+            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState::default() }), 
+            multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None 
+        });
 
         let skybox_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Skybox Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("../render/skybox.wgsl").into()) });
         let skybox_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Skybox Layout"), bind_group_layouts: &[Some(&skybox_bind_group_layout)], immediate_size: 0 });
@@ -175,15 +178,7 @@ impl State {
             vertex: wgpu::VertexState { module: &skybox_shader, entry_point: Some("vs_main"), buffers: &[], compilation_options: Default::default() }, 
             fragment: Some(wgpu::FragmentState { module: &skybox_shader, entry_point: Some("fs_main"), targets: &[Some(wgpu::ColorTargetState { format: surface_config.format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }), 
             primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: None, ..Default::default() }, 
-            
-            // FIXED: Using Some(false) instead of false
-            depth_stencil: Some(wgpu::DepthStencilState { 
-                format: wgpu::TextureFormat::Depth32Float, 
-                depth_write_enabled: Some(false), 
-                depth_compare: Some(wgpu::CompareFunction::LessEqual), 
-                stencil: wgpu::StencilState::default(), 
-                bias: wgpu::DepthBiasState::default() 
-            }), 
+            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: Some(false), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState::default() }), 
             multisample: wgpu::MultisampleState::default(), multiview_mask: None, cache: None 
         });
 
@@ -254,7 +249,7 @@ impl State {
             for (i, b) in self.sky_data.iter().enumerate() { if i < config::MAX_CELESTIAL_BODIES { sky_array[i] = *b; } }
 
             let sky_uniform = SkyboxUniform {
-                view_proj_inv: (proj * view_no_translate).inverse().to_cols_array_2d(), 
+                view_proj_inv: (crate::light::OPENGL_TO_WGPU_MATRIX * proj * view_no_translate).inverse().to_cols_array_2d(), 
                 horizon_color: config::SKY_HORIZON_COLOR, zenith_color: config::SKY_ZENITH_COLOR,
                 settings: [config::USE_PANORAMA, self.sky_data.len() as u32, 0, 0], bodies: sky_array,
             };
@@ -298,14 +293,12 @@ impl State {
                 label: Some("Main Pass"), color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, depth_slice: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store } })], depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth_texture_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }), timestamp_writes: None, occlusion_query_set: None, multiview_mask: None,
             });
 
-            // 2A. Draw Skybox First!
             if config::USE_SKYBOX == 1 {
                 render_pass.set_pipeline(&self.skybox_pipeline);
                 render_pass.set_bind_group(0, &self.skybox_bind_group, &[]);
                 render_pass.draw(0..3, 0..1); 
             }
 
-            // 2B. Draw Models
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.global_bind_group, &[]);
             for model in &self.models {
